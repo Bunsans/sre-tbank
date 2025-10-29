@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: whoami-config
+data:
+  default.conf: |
+    server {
+        listen 80 default_server;
+        server_name _;
+        default_type text/plain;
+        location / {
+            return 200 'You are kim from ab1\n';
+        }
+    }

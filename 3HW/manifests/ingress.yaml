@@ -1,0 +1,32 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: hello-app
+  namespace: st-ab1-kim
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /$1
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "10s"
+    nginx.ingress.kubernetes.io/lb-method: "round_robin"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: st-ab1-kim.ingress.sre-ab.ru
+      http:
+        paths:
+          - path: /hello
+            pathType: Prefix
+            backend:
+              service:
+                name: hello-app
+                port:
+                  number: 80
+    - host: st-ab1-kim.ingress.sre-ab.ru
+      http:
+        paths:
+          - path: /whoami
+            pathType: Prefix
+            backend:
+              service:
+                name: whoami
+                port:
+                  number: 80

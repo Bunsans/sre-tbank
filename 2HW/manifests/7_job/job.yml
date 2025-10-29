@@ -1,0 +1,19 @@
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: hello
+spec:
+  backoffLimit: 2
+  activeDeadlineSeconds: 30
+  template:
+    spec:
+      containers:
+      - name: hello
+        image: busybox
+        args:
+          - /bin/sh
+          - -c
+          - while true; do date; echo Hello from the Kubernetes cluster; sleep 1; done
+      restartPolicy: Never
+

@@ -1,0 +1,40 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vector
+data:
+  vector.yaml: |
+    sources:
+      oncall_logs:
+        type: file
+        include: 
+           - /home/oncall/var/log/nginx/*.log
+           - /home/oncall/var/log/uwsgi/*.log
+           
+    transforms:
+      transform_oncall_logs:
+        type: remap
+        inputs: [oncall_logs]
+        source: |
+          .message = .message # Переносим исходное сообщение в поле message
+          .timestamp = now() 
+          .level = "info"
+          .log_source = "oncall-app" 
+          .host = "kubernetes-node"
+          .service = "oncall"
+          .component = "web"
+          del(.kubernetes) 
+          del(.stream)
+          del(.log_path)
+          del(.time)
+          del(.container_id)
+          del(.container_name)
+          del(.source_type)
+
+    sinks:
+      stdout_logs:
+        type: console
+        inputs: [transform_oncall_logs]
+        encoding:
+          codec: json
