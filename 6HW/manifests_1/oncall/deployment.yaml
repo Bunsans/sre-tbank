@@ -43,13 +43,15 @@ spec:
             - name: uwsgi-logs
               mountPath: /home/oncall/var/log/uwsgi
         - name: oncall
-          image: knucksie/sre-ab-oncall:0.1
+          image: knucksie/sre-ab-oncall:0.3
           env:
             - name: DOCKER_DB_BOOTSTRAP
               value: "1"
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8080
+            - containerPort: 8888 # Порт метрик
+
           livenessProbe:
             httpGet:
               path: /healthcheck

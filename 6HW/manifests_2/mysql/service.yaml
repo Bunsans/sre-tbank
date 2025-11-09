@@ -1,0 +1,23 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: oncall-mysql
+  labels:
+    app: mysql
+    app.kubernetes.io/name: mysql
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9104"
+    prometheus.io/path: "/metrics"
+spec:
+  ports:
+    - name: mysql
+      port: 3306
+      targetPort: 3306
+    - name: metrics
+      port: 9104
+      targetPort: 9104
+  clusterIP: None
+  selector:
+    app: mysql

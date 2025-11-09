@@ -1,0 +1,112 @@
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mysql
+spec:
+  selector:
+    matchLabels:
+      app: mysql
+      app.kubernetes.io/name: mysql
+  serviceName: mysql
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: mysql
+        app.kubernetes.io/name: mysql
+    spec:
+      initContainers:
+      - name: generate-mycnf
+        image: busybox:1.36
+        envFrom:
+          - secretRef:
+              name: mysql
+        command:
+          - sh
+          - -c
+          - |
+            set -eu
+            umask 077
+            mkdir -p /config
+            cat > /config/my.cnf <<'EOF'
+            [client]
+            user=root
+            password=${MYSQL_ROOT_PASSWORD}
+            host=127.0.0.1
+            port=3306
+            EOF
+            sed -i "s|\${MYSQL_ROOT_PASSWORD}|${MYSQL_ROOT_PASSWORD}|g" /config/my.cnf
+            chown 65534:65534 /config/my.cnf
+            chmod 0400 /config/my.cnf
+        volumeMounts:
+          - name: exporter-config
+            mountPath: /config
+      containers:
+        - name: mysql
+          image: mysql:8.3.0
+          envFrom:
+            - secretRef:
+                name: mysql
+          ports:
+            - name: mysql
+              containerPort: 3306
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/mysql
+              subPath: mysql
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+          livenessProbe:
+            tcpSocket:
+              port: 3306
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+          readinessProbe:
+            tcpSocket:
+              port: 3306
+            initialDelaySeconds: 5
+            periodSeconds: 2
+            timeoutSeconds: 1
+        - name: mysql-exporter
+          image: prom/mysqld-exporter:v0.15.1
+          args:
+            - "--config.my-cnf=/etc/mysql-exporter/my.cnf"
+          ports:
+            - name: metrics
+              containerPort: 9104
+          resources:
+            requests:
+              cpu: 100m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          volumeMounts:
+            - name: exporter-config
+              mountPath: /etc/mysql-exporter
+              readOnly: true
+          livenessProbe:
+            httpGet:
+              path: /metrics
+              port: 9104
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /metrics
+              port: 9104
+            initialDelaySeconds: 30
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+      volumes:
+        - name: data
+          emptyDir: {}
+        - name: exporter-config
+          emptyDir: {}
