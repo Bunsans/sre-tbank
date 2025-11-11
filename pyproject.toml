@@ -1,0 +1,12 @@
+[project]
+name = "sre-tbank"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "black>=25.11.0",
+    "environs>=14.5.0",
+    "mysql-connector-python>=9.5.0",
+    "prometheus-client>=0.23.1",
+]

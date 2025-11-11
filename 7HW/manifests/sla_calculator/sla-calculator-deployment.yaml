@@ -1,0 +1,286 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sla-calculator
+  labels:
+    app.kubernetes.io/name: sla-calculator
+    app.kubernetes.io/component: calculator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: sla-calculator
+      app.kubernetes.io/component: calculator
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: sla-calculator
+        app.kubernetes.io/component: calculator
+    spec:
+      containers:
+        - name: sla-calculator
+          image: python:3.9-slim-buster # Or your custom image for the calculator
+          command: ["python", "calculate_sla.py"]
+          envFrom:
+            - configMapRef:
+                name: sla-calculator-config
+            - secretRef: # Reference the MySQL root password from the existing secret
+                name: mysql # This assumes your existing 'mysql' secret contains MYSQL_ROOT_PASSWORD
+          resources:
+            requests:
+              cpu: 100m
+              memory: 150Mi
+            limits:
+              cpu: 200m
+              memory: 300Mi
+          volumeMounts:
+            - name: calculator-script
+              mountPath: /app/calculate_sla.py
+              subPath: calculate_sla.py
+              readOnly: true
+      volumes:
+        - name: calculator-script
+          configMap:
+            name: sla-calculator-script # This ConfigMap will hold the calculate_sla.py script
+            items:
+              - key: calculate_sla.py
+                path: calculate_sla.py
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sla-calculator-script # New ConfigMap to hold the actual calculator Python script
+data:
+  calculate_sla.py: |
+    # PASTE THE ENTIRE `calculate_sla.py` CONTENT HERE
+    # (Including imports, classes, functions, etc.)
+    import logging
+    import signal
+    import sys
+    import time
+    from datetime import datetime, timedelta
+
+    import mysql.connector
+    import requests
+    from environs import Env
+
+    env = Env()
+    env.read_env()
+
+
+    class Config(object):
+        prometheus_api_url = env("PROMETHEUS_API_URL", "http://prometheus-kube-prometheus-oper-prometheus:9090") # Update to typical Kubernetes Prometheus URL
+        scrape_interval = env.int("SCRAPE_INTERVAL", 60) # How often the calculator runs
+        sla_period_days = env.int("SLA_PERIOD_DAYS", 30) # Period for SLA calculation
+        log_level = env.log_level("LOG_LEVEL", logging.INFO)
+        mysql_host = env("MYSQL_HOST", "oncall-mysql") # Update to Kubernetes service name
+        mysql_port = env.int("MYSQL_PORT", 3306)
+        mysql_user = env("MYSQL_USER", "root")
+        mysql_password = env("MYSQL_PASS", "1234") # Changed to load from secret in K8s manifest
+        mysql_db_name = env("MYSQL_DB_NAME", "sla")
+
+
+    class Mysql:
+        def __init__(self, config: Config) -> None:
+            logging.info("Connecting to MySQL database")
+            # Connect without specifying DB first to create it if not exists
+            self.connection = mysql.connector.connect(
+                host=config.mysql_host,
+                port=config.mysql_port,
+                user=config.mysql_user,
+                passwd=config.mysql_password,
+                auth_plugin="mysql_native_password", # Common plugin for newer MySQL
+                autocommit=True # Ensure changes are immediately saved
+            )
+            self.db_name = config.mysql_db_name
+            self.table_name = "sla_indicators"
+            
+            logging.info(f"Ensuring database '{self.db_name}' and table '{self.table_name}' exist.")
+            cursor = self.connection.cursor()
+            
+            try:
+                cursor.execute(f"CREATE DATABASE IF NOT EXISTS {self.db_name}")
+                cursor.execute(f"USE {self.db_name}")
+                cursor.execute(
+                    f"""
+                CREATE TABLE IF NOT EXISTS {self.table_name}(
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                datetime datetime not null default NOW(),
+                name varchar(255) not null,
+                slo_target float(5,3) not null,
+                current_value float(5,3) not null,
+                is_bad bool not null default false,
+                period_days INT not null
+                )
+                """
+                )
+                cursor.execute(f"ALTER TABLE {self.table_name} ADD INDEX (datetime)")
+                cursor.execute(f"ALTER TABLE {self.table_name} ADD INDEX (name)")
+            except mysql.connector.Error as err:
+                logging.critical(f"Failed to initialize database or table: {err}")
+                sys.exit(1) # Exit if DB initialization fails
+            finally:
+                cursor.close()
+
+        def save_indicator(self, name: str, slo_target: float, current_value: float, is_bad: bool, period_days: int, current_time: datetime):
+            """Saves a calculated SLA indicator to the database."""
+            cursor = self.connection.cursor()
+            sql = f"INSERT INTO {self.table_name} (name, slo_target, current_value, is_bad, period_days, datetime) VALUES (%s, %s, %s, %s, %s, %s)"
+            val = (name, slo_target, current_value, int(is_bad), period_days, current_time)
+            try:
+                cursor.execute(sql, val)
+                logging.debug(f"Saved indicator: {name}, Value: {current_value}, Bad: {is_bad}")
+            except mysql.connector.Error as err:
+                logging.error(f"Error saving indicator '{name}': {err}")
+            finally:
+                cursor.close()
+
+        def close(self):
+            if self.connection.is_connected():
+                self.connection.close()
+                logging.info("MySQL connection closed.")
+
+
+    class PrometheusRequest:
+        def __init__(self, config: Config) -> None:
+            self.prometheus_api_url = config.prometheus_api_url
+            self.session = requests.Session()
+
+        def query_range(self, query: str, start: datetime, end: datetime, step: str = "1m") -> list:
+            """
+            Queries Prometheus for a range of data.
+            Returns a list of [timestamp, value] pairs.
+            """
+            try:
+                response = self.session.get(
+                    f"{self.prometheus_api_url}/api/v1/query_range",
+                    params={
+                        "query": query,
+                        "start": start.timestamp(),
+                        "end": end.timestamp(),
+                        "step": step,
+                    },
+                    timeout=10
+                )
+                response.raise_for_status() # Raise an exception for HTTP errors
+                content = response.json()
+                if not content or content.get("status") != "success":
+                    logging.warning(f"Prometheus query failed or returned no data for query '{query}': {content.get('errorType', 'N/A')} - {content.get('error', 'N/A')}")
+                    return []
+                
+                result = content["data"]["result"]
+                if not result:
+                    return []
+                
+                # Assuming a single series result for simplicity in these SLIs
+                return result[0]["values"] if result else []
+            except requests.exceptions.RequestException as error:
+                logging.error(f"Error querying Prometheus for '{query}': {error}")
+                return []
+            except Exception as error:
+                logging.error(f"Unexpected error processing Prometheus response for '{query}': {error}")
+                return []
+
+
+    def setup_logging(config: Config):
+        logging.basicConfig(
+            stream=sys.stdout,
+            level=config.log_level, # Use config.log_level here
+            format="%(asctime)s %(levelname)s:%(message)s",
+        )
+
+
+    def calculate_availability_sli(total_checks: list, success_checks: list) -> float:
+        """Calculates the availability SLI percentage."""
+        total_sum = sum(float(val) for _, val in total_checks)
+        success_sum = sum(float(val) for _, val in success_checks)
+        
+        if total_sum == 0:
+            return 100.0 # No checks performed, assume 100% availability
+        return (success_sum / total_sum) * 100
+
+    def main():
+        config = Config()
+        setup_logging(config)
+        
+        db = None
+        try:
+            db = Mysql(config)
+            prom = PrometheusRequest(config)
+            logging.info(f"Starting SLA checker. Calculating over {config.sla_period_days} days.")
+
+            while True:
+                current_time = datetime.utcnow()
+                start_time = current_time - timedelta(days=config.sla_period_days)
+                logging.info(f"Calculating SLAs for period: {start_time.isoformat()} to {current_time.isoformat()}")
+
+                # --- Technical SLI: API Availability ---
+                # SLI: (Successful API availability checks / Total API availability checks) * 100%
+                # Query for cumulative sum over the period for better accuracy in a range query
+                api_total_query = f"sum_over_time(prober_api_availability_total[{config.sla_period_days}d])"
+                api_success_query = f"sum_over_time(prober_api_availability_success_total[{config.sla_period_days}d])"
+
+                api_total = prom.query_range(api_total_query, start_time, current_time, step=f"{config.sla_period_days*1440}m") # Single point at end
+                api_success = prom.query_range(api_success_query, start_time, current_time, step=f"{config.sla_period_days*1440}m")
+
+                api_total_val = float(api_total[-1][1]) if api_total else 0
+                api_success_val = float(api_success[-1][1]) if api_success else 0
+
+                api_availability_percentage = calculate_availability_sli([[0,api_total_val]], [[0,api_success_val]])
+                
+                api_availability_slo = 99.9
+                api_availability_is_bad = api_availability_percentage < api_availability_slo
+                db.save_indicator(
+                    name="api_availability_percentage",
+                    slo_target=api_availability_slo,
+                    current_value=api_availability_percentage,
+                    is_bad=api_availability_is_bad,
+                    period_days=config.sla_period_days,
+                    current_time=current_time
+                )
+                logging.info(f"API Availability: {api_availability_percentage:.3f}% (SLO: {api_availability_slo}%), Bad: {api_availability_is_bad}")
+
+                # --- Business SLI: Notification Delivery ---
+                # SLI: (Successful notification delivery simulations / Total notification delivery simulations) * 100%
+                notification_total_query = f"sum_over_time(prober_notification_delivery_total[{config.sla_period_days}d])"
+                notification_success_query = f"sum_over_time(prober_notification_delivery_success_total[{config.sla_period_days}d])"
+
+                notification_total = prom.query_range(notification_total_query, start_time, current_time, step=f"{config.sla_period_days*1440}m")
+                notification_success = prom.query_range(notification_success_query, start_time, current_time, step=f"{config.sla_period_days*1440}m")
+
+                notification_total_val = float(notification_total[-1][1]) if notification_total else 0
+                notification_success_val = float(notification_success[-1][1]) if notification_success else 0
+
+                notification_delivery_percentage = calculate_availability_sli([[0,notification_total_val]], [[0,notification_success_val]])
+                
+                notification_delivery_slo = 98.0
+                notification_delivery_is_bad = notification_delivery_percentage < notification_delivery_slo
+                db.save_indicator(
+                    name="notification_delivery_percentage",
+                    slo_target=notification_delivery_slo,
+                    current_value=notification_delivery_percentage,
+                    is_bad=notification_delivery_is_bad,
+                    period_days=config.sla_period_days,
+                    current_time=current_time
+                )
+                logging.info(f"Notification Delivery: {notification_delivery_percentage:.3f}% (SLO: {notification_delivery_slo}%), Bad: {notification_delivery_is_bad}")
+                
+                logging.debug(f"Waiting {config.scrape_interval} seconds for next loop")
+                time.sleep(config.scrape_interval)
+
+        except Exception as e:
+            logging.critical(f"SLA Calculator experienced a critical error: {e}", exc_info=True)
+        finally:
+            if db:
+                db.close()
+
+
+    def terminate(signal, frame):
+        logging.info("Terminating SLA calculator")
+        sys.exit(0)
+
+
+    if __name__ == "__main__":
+        signal.signal(signal.SIGTERM, terminate)
+        signal.signal(signal.SIGINT, terminate) # Also handle Ctrl+C
+        main()
