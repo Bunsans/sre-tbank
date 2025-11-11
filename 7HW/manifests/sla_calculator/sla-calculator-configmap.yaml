@@ -2,17 +2,12 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: sla-calculator-config
-  labels:
-    app.kubernetes.io/name: sla-calculator
+  namespace: st-ab1-kim # Укажите ваш namespace
 data:
-  .env: |
-    # Configuration for the SLA Calculator
-    PROMETHEUS_API_URL=http://prometheus-kube-prometheus-oper-prometheus:9090 # Adjust this to your Prometheus service
-    SCRAPE_INTERVAL=60 # How often the calculator runs (seconds)
-    SLA_PERIOD_DAYS=30 # Rolling window for SLA calculation (days)
-    LOG_LEVEL=INFO # Logging level
-    MYSQL_HOST=oncall-mysql # Kubernetes service name for OnCall's MySQL
-    MYSQL_PORT=3306
-    MYSQL_USER=root
-    MYSQL_PASS=1234 # Consider using a Secret for this
-    MYSQL_DB_NAME=sla # Database name for SLA results
+  MAGE_API_URL: "https://sage.sre-ab.ru/mage/api/search"
+  MAGE_METRICS_INDEX: "oncall_metrics" 
+  SLA_PERIOD_DAYS: "30"
+  SCRAPE_INTERVAL: "60"
+  LOG_LEVEL: "INFO"
+  MYSQL_HOST: "oncall-mysql"
+  MYSQL_DB_NAME: "sla"

@@ -46,7 +46,6 @@ PROBER_NOTIFICATION_DELIVERY_DURATION_SECONDS = Histogram(
 )
 
 env = Env()
-env.read_env()
 
 
 class Config(object):

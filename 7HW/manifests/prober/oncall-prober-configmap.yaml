@@ -5,9 +5,7 @@ metadata:
   labels:
     app.kubernetes.io/name: oncall-prober
 data:
-  .env: |
-    # Configuration for the OnCall Prober
-    ONCALL_API_URL=http://oncall:8080 # Internal service URL for OnCall
-    PROBER_SCRAPE_INTERVAL=30 # How often the prober runs its checks (seconds)
-    PROBER_LOG_LEVEL=INFO # Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
-    PROBER_METRICS_PORT=9082 # Port for Prometheus metrics exporter
+  ONCALL_API_URL: http://oncall:8080 # Internal service URL for OnCall
+  PROBER_SCRAPE_INTERVAL: "30" # Значения должны быть строками
+  PROBER_LOG_LEVEL: INFO
+  PROBER_METRICS_PORT: "9082" # Значения должны быть строками

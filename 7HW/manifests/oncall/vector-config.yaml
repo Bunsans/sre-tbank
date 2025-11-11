@@ -1,0 +1,37 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vector-config
+data:
+  vector.toml: |
+    [log_schema]
+    enabled = true
+
+    [sources.oncall_logs]
+    type = "file"
+    include = ["/home/oncall/var/log/nginx/*.log"]
+    read_from = "beginning"
+    max_read_bytes = 10485760
+
+    [transforms.enrich]
+    type = "remap"
+    inputs = ["oncall_logs"]
+    source = '''
+     .message, err = to_string(.message)
+
+    .env = "dev"
+    .system = "oncall"
+
+    .inst = .kubernetes.pod_name
+
+    .timestamp = now()
+    
+    .level = "info"
+    '''
+
+    [sinks.console]
+    type = "console"
+    inputs = ["enrich"]
+    target = "stdout"
+    encoding.codec = "json"

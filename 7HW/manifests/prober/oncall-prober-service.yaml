@@ -1,0 +1,21 @@
+# Добавьте этот манифест в ваш файл
+apiVersion: v1
+kind: Service
+metadata:
+  name: oncall-prober-metrics # Имя сервиса
+  labels:
+    app.kubernetes.io/name: oncall-prober
+    app.kubernetes.io/component: prober
+  annotations:
+    prometheus.io/scrape: "true" # Эти аннотации должны быть на сервисе, если Prometheus собирает по сервисам
+    prometheus.io/port: "9082"    # Порт, на котором сервис будет открывать метрики
+    prometheus.io/path: "/metrics" # Путь к метрикам
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: oncall-prober # Должен соответствовать меткам пода
+  ports:
+    - name: metrics
+      protocol: TCP
+      port: 9082 # Порт сервиса
+      targetPort: 9082 # Порт контейнера, на котором отдаются метрики
