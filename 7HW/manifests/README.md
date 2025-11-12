@@ -81,3 +81,13 @@ KUBE_NS=$KUBE_NS envsubst < manifests/oncall/deployment.yaml | kubectl apply -f 
 KUBE_NS=$KUBE_NS envsubst < manifests/oncall/service.yaml | kubectl apply -f - -n $KUBE_NS
 KUBE_NS=$KUBE_NS envsubst < manifests/oncall/ingress.yaml | kubectl apply -f - -n $KUBE_NS
 ```
+
+
+
+посмотреть в таблице
+
+kubectl exec -it mysql-0 -- bash
+mysql -u root -p
+USE sla;
+
+SELECT * FROM sla_indicators ORDER BY datetime LIMIT 10;

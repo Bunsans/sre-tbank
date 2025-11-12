@@ -5,9 +5,9 @@ metadata:
   namespace: st-ab1-kim # Укажите ваш namespace
 data:
   MAGE_API_URL: "https://sage.sre-ab.ru/mage/api/search"
-  MAGE_METRICS_INDEX: "oncall_metrics" 
-  SLA_PERIOD_DAYS: "30"
+  MAGE_SOURCE: "token_sla_calc"
+  SLA_PERIOD_MINUTES: "30"
   SCRAPE_INTERVAL: "60"
-  LOG_LEVEL: "INFO"
+  LOG_LEVEL: "DEBUG"
   MYSQL_HOST: "oncall-mysql"
   MYSQL_DB_NAME: "sla"

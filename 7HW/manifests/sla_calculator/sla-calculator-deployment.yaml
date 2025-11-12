@@ -20,7 +20,6 @@ spec:
       containers:
         - name: sla-calculator
           image: bunsans/sla-calculator:latest
-          imagePullPolicy: IfNotPresent
           envFrom:
             - configMapRef:
                 name: sla-calculator-config

@@ -3,3 +3,4 @@
 *.mp4
 *.gz
 *.DS_Store
+*tmp*

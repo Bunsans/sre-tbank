@@ -27,23 +27,25 @@ PROBER_API_AVAILABILITY_DURATION_SECONDS = Histogram(
 )
 
 # Business SLI: Notification Delivery (simulated via user creation/deletion)
-PROBER_NOTIFICATION_DELIVERY_TOTAL = Counter(
-    "prober_notification_delivery_total",
-    "Total count of notification delivery simulations",
+PROBER_CREATION_USER_TOTAL = Counter(
+    "prober_creation_user_total",
+    "Total count of creation user simulations",
 )
-PROBER_NOTIFICATION_DELIVERY_SUCCESS_TOTAL = Counter(
-    "prober_notification_delivery_success_total",
-    "Total count of successful notification delivery simulations",
+PROBER_CREATION_USER_SUCCESS_TOTAL = Counter(
+    "prober_creation_user_success_total",
+    "Total count of successful creation user simulations",
 )
-PROBER_NOTIFICATION_DELIVERY_FAIL_TOTAL = Counter(
-    "prober_notification_delivery_fail_total",
-    "Total count of failed notification delivery simulations",
+PROBER_CREATION_USER_FAIL_TOTAL = Counter(
+    "prober_creation_user_fail_total",
+    "Total count of failed creation user simulations",
 )
-PROBER_NOTIFICATION_DELIVERY_DURATION_SECONDS = Histogram(
-    "prober_notification_delivery_duration_seconds",
-    "Duration in seconds of notification delivery simulations",
+PROBER_CREATION_USER_DURATION_SECONDS = Histogram(
+    "prober_creation_user_duration_seconds",
+    "Duration in seconds of creation user simulations",
     buckets=[0.001, 0.005, 0.01, 0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0],
 )
+
+
 
 env = Env()
 
@@ -93,15 +95,9 @@ class OncallProberClient:
             )
         return success
 
-    def _simulate_notification_delivery(self) -> bool:
-        """
-        Simulates notification delivery by creating and deleting a test user.
-        This represents the Business SLI: Notification Delivery.
-        A successful user creation and deletion indicates the core OnCall logic
-        (which includes notification setup) is functioning.
-        """
-        PROBER_NOTIFICATION_DELIVERY_TOTAL.inc()
-        logging.debug("Simulating notification delivery (create/delete user)")
+    def _simulate_creation_user(self) -> bool:
+        PROBER_CREATION_USER_TOTAL.inc()
+        logging.debug("Simulating creation user (create/delete user)")
         username = f"prober_test_user_{int(time.time())}"  # Unique username
         start_time = time.perf_counter()
         create_success = False
@@ -115,12 +111,12 @@ class OncallProberClient:
                 json={"name": username, "email": f"{username}@example.com"},
                 timeout=5,
             )
-            if create_request.status_code == 201:
+            if create_request.status_code == 200:
                 logging.debug(f"User '{username}' created successfully.")
                 create_success = True
             else:
                 logging.warning(
-                    f"Failed to create user '{username}'. Status: {create_request.status_code}, Response: {create_request.text}"
+                    f"Failed to create user '{username}'. Status: {create_request.status_code}, Response: {create_request.text[:1000]}"
                 )
 
         except requests.exceptions.RequestException as err:
@@ -141,23 +137,23 @@ class OncallProberClient:
                             f"Failed to delete user '{username}'. Status: {delete_request.status_code}, Response: {delete_request.text}"
                         )
                 except requests.exceptions.RequestException as err:
-                    logging.error(f"Error during user deletion for '{username}': {err}")
+                    logging.error(f"Error during user deletion for '{username}': {err[:1000]}")
 
             # Record outcome for notification delivery simulation
             if create_success and delete_success:
-                PROBER_NOTIFICATION_DELIVERY_SUCCESS_TOTAL.inc()
+                PROBER_CREATION_USER_SUCCESS_TOTAL.inc()
                 logging.info(
                     f"Notification delivery simulation for '{username}' successful."
                 )
                 return_success = True
             else:
-                PROBER_NOTIFICATION_DELIVERY_FAIL_TOTAL.inc()
+                PROBER_CREATION_USER_FAIL_TOTAL.inc()
                 logging.warning(
                     f"Notification delivery simulation for '{username}' failed (create_success: {create_success}, delete_success: {delete_success})."
                 )
                 return_success = False
 
-            PROBER_NOTIFICATION_DELIVERY_DURATION_SECONDS.observe(
+            PROBER_CREATION_USER_DURATION_SECONDS.observe(
                 time.perf_counter() - start_time
             )
         return return_success
@@ -165,7 +161,7 @@ class OncallProberClient:
     def probe_all_slis(self) -> None:
         """Runs all defined SLI probes."""
         self._check_api_liveness()
-        self._simulate_notification_delivery()
+        self._simulate_creation_user()
 
 
 def setup_logging(config: Config):
