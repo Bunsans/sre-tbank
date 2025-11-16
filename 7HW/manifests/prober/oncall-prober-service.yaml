@@ -2,9 +2,9 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: oncall-prober-metrics # Имя сервиса
+  name: prober-metrics # Имя сервиса
   labels:
-    app.kubernetes.io/name: oncall-prober
+    app.kubernetes.io/name: prober
     app.kubernetes.io/component: prober
   annotations:
     prometheus.io/scrape: "true" # Эти аннотации должны быть на сервисе, если Prometheus собирает по сервисам
@@ -13,7 +13,7 @@ metadata:
 spec:
   type: ClusterIP
   selector:
-    app.kubernetes.io/name: oncall-prober # Должен соответствовать меткам пода
+    app.kubernetes.io/name: prober # Должен соответствовать меткам пода
   ports:
     - name: metrics
       protocol: TCP
