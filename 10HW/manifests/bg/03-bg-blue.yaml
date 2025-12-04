@@ -1,0 +1,27 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-app-b
+  labels:
+    app: my-app-bg
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: my-app-bg
+      version: v1.0.0
+  template:
+    metadata:
+      labels:
+        app: my-app-bg
+        version: v1.0.0
+    spec:
+      containers:
+      - name: my-app-bg
+        image: containersol/k8s-deployment-strategies
+        ports:
+        - containerPort: 8080
+        - containerPort: 9101
+        env:
+        - name: VERSION
+          value: "v1.0.0"
